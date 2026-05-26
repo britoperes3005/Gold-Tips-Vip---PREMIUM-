@@ -1,0 +1,74 @@
+import requests
+import asyncio
+from telegram import Bot
+
+# ── CONFIGURAÇÕES ──────────────────────────────
+TELEGRAM_TOKEN = "8879353826:AAE_xIghGsx9l2jgq-CDUm-8A_5b0oc45AI"
+CHAT_ID        = "1525305787"  # vamos pegar logo abaixo
+API_KEY        = "cc47bf1f2acb982f8ce51aa4f79eabb5"
+
+# ── BUSCAR JOGOS ───────────────────────────────
+def buscar_sinais():
+    url = "https://api.the-odds-api.com/v4/sports/soccer_brazil_campeonato/odds"
+    parametros = {
+        "apiKey": API_KEY,
+        "regions": "eu",
+        "markets": "h2h",
+        "oddsFormat": "decimal"
+    }
+    resposta = requests.get(url, params=parametros)
+    dados = resposta.json()
+
+    sinais = []
+    for jogo in dados:
+        casa = jogo["home_team"]
+        fora = jogo["away_team"]
+        data = jogo["commence_time"][:10]
+
+        bookmaker = jogo["bookmakers"][0]
+        mercado   = bookmaker["markets"][0]
+        outcomes  = mercado["outcomes"]
+
+        odd_casa = next(o["price"] for o in outcomes if o["name"] == casa)
+        odd_fora = next(o["price"] for o in outcomes if o["name"] == fora)
+
+        casa_valida  = 1.50 <= odd_casa <= 3.50
+        fora_valida  = 1.50 <= odd_fora <= 3.50
+        equilibrado  = abs(odd_casa - odd_fora) <= 1.50
+
+        if casa_valida and fora_valida and equilibrado:
+            sinais.append({
+                "casa": casa,
+                "fora": fora,
+                "data": data,
+                "odd_casa": odd_casa,
+                "odd_fora": odd_fora
+            })
+    return sinais
+
+# ── ENVIAR SINAIS ──────────────────────────────
+async def enviar_sinais():
+    bot    = Bot(token=TELEGRAM_TOKEN)
+    sinais = buscar_sinais()
+
+    if not sinais:
+        await bot.send_message(chat_id=CHAT_ID, text="Nenhum sinal encontrado hoje.")
+        return
+
+    for sinal in sinais:
+        mensagem = (
+            f"🟢 *SINAL IDENTIFICADO*\n\n"
+            f"⚽ {sinal['casa']} x {sinal['fora']}\n"
+            f"📅 Data: {sinal['data']}\n"
+            f"📊 Odds: Casa {sinal['odd_casa']} | Fora {sinal['odd_fora']}\n"
+            f"💡 Jogo equilibrado\n\n"
+            f"⚠️ _Aposte com responsabilidade!_"
+        )
+        await bot.send_message(
+            chat_id=CHAT_ID,
+            text=mensagem,
+            parse_mode="Markdown"
+        )
+        print(f"Sinal enviado: {sinal['casa']} x {sinal['fora']}")
+
+asyncio.run(enviar_sinais())
